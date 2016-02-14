@@ -1,0 +1,170 @@
+---
+title: "Final project for Practical Machine Learning course"
+output: html_document
+---
+
+*The goal of this project is to predict if an exercise is performed correctly or not.
+For this we have two sets of data containing many information on the the exercised performed by 6 athletes.*
+
+## Loading the data
+
+**The first step in this projet is to load the two sets of data after loading the different packages we'll be using :**
+
+```{r message=FALSE, warning=FALSE}
+
+#### Packages to upload
+library(forecast)
+library(caret)
+library(kernlab)
+library(ISLR)
+library(ggplot2)
+library(AppliedPredictiveModeling)
+library(ElemStatLearn)
+library(pgmm)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(gbm)
+library(forecast)
+library(dplyr)
+library(randomForest)
+
+data_train = read.csv("C:/Users/mmazouzi/Documents/Formations/Machine Learning/Projet final/pml-training.csv")
+data_test = read.csv("C:/Users/mmazouzi/Documents/Formations/Machine Learning/Projet final/pml-testing.csv")
+```
+
+
+
+**After that i wanted to check the number of variables available in the dataset and the size of the dataset :**
+
+```{r}
+length(data_train)
+nrow(data_train)
+```
+
+## Data preparation and cleansing
+
+**The dataset needs some cleansing so i will start by removing all the variables containing too many empty values, NA, or with an over represented level **
+
+```{r}
+colno <- 1
+data_reduced <- data.frame(matrix(nrow = nrow(data_train), ncol = 0))
+
+#Removing the features with only NA or empty values as well as features with modalities representing more than 95% of the sample
+for (i in 1:length(data_train)) {
+  Eff <- data.frame(table(data_train[i]))
+  names(Eff)[names(Eff)=="Var1"] <- "Modalite"
+  longueur <- nrow(data_train)
+  Eff$longueur <- as.integer(nrow(data_train))
+  Eff$prop <- (Eff$Freq/Eff$longueur)
+  Eff$ok <- ( nchar(as.character(Eff$Modalite)) == 0 | Eff$Modalite == "#DIV/0!" | is.na(Eff$Modalite))==FALSE
+  Eff_reduced <- Eff[Eff$ok == TRUE,]
+  nb_non_null <- sum(Eff_reduced$Freq)/longueur
+  if (nrow(Eff_reduced)>1 & nb_non_null>=0.05) {
+  data_reduced[colno] <- data_train[i]
+  colno = colno+1
+  }
+}
+
+```
+
+```{r}
+ncol(data_reduced)
+ncol(data_train)
+```
+
+**The data are almost ready for modelling.
+Now I will juste removing the variables that don't make sense taking into account in the models :
+- X which is an Id
+- user_name**
+
+
+```{r}
+# Delete non-relevant features 
+col_to_drop <- c("X","user_name")
+data_reduced <- data_reduced[,!(names(data_reduced) %in% col_to_drop)]
+names(data_reduced)
+```
+
+**I will set the seed to be sure to obtain the same results**
+```{r}
+set.seed(3831)
+```
+
+**Now I only need to split my training test into a training and testing sample to validate the models before applying it to the final test set to cross validate the models before applying it to the final test set.
+For this I will use the createDataPartition function :**
+
+```{r}
+inTrain = createDataPartition(y=data_reduced$classe, p = 0.6, list=FALSE)
+training = data_reduced[inTrain,]
+testing = data_reduced[-inTrain,]
+```
+
+## Modeling
+
+### First model : Decision tree
+
+```{r}
+fit_dt <-rpart(classe~.,data=training, method="class")
+fancyRpartPlot(fit_dt)
+```
+
+### Predicting in-sample error:
+```{r}
+predict_tree <- predict(fit_dt,testing, type="class")
+confusionMatrix(predict_tree, testing$classe)
+```
+
+
+### Second model : Boosting
+```{r results='hide', message=FALSE, warning=FALSE}
+fitgbm <-train(classe~.,data=training, method="gbm") 
+```
+
+```{r}
+gbm_mod <- fitgbm$finalModel
+```
+
+### Predicting in-sample error for generalized boosted regression models:
+```{r}
+predgbm <- predict(fitgbm,testing)
+confusionMatrix(predgbm, testing$classe)
+```
+
+
+### Third model : Random Forest
+```{r}
+fitrf <-train(classe~.,data=training, method="rf", type="class") 
+rf_mod <- fitrf$finalModel
+```
+### Predicting in-sample error for the random forest:
+```{r}
+predrf <- predict(fitrf,testing)
+confusionMatrix(predrf, testing$classe)
+```
+
+
+### Fourth model : Discriminant analysis
+```{r results='hide', message=FALSE, warning=FALSE}
+fitlda <-train(classe~.,data=training,method="lda", type="class") 
+lda_mod <- fitlda$finalModel
+```
+### Predicting in-sample error for the discriminant analysis:
+```{r}
+predlda <- predict(fitlda,testing)
+confusionMatrix(predlda, testing$classe)
+```
+
+**The best predictions are obtained with the generalized boosted regression models and random forest**
+
+
+**I will use the gbm method and rf to predict the out of sample error for the quiz submission**
+
+```{r}
+predgbm <- predict(fitgbm,data_test)
+predrf <- predict(fitrf,data_test)
+predgbm
+predrf
+```
+
+
